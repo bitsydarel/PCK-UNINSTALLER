@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime
+from itertools import chain
+from locale import getdefaultlocale
+import logging
 from sys import exit, exc_info
 from time import sleep, ctime
 from threading import Thread
@@ -16,7 +19,7 @@ def greeting():
     sub.call("cls", shell=True)
     color_white()
     message = print("""##############################################
-PCK UNINSTALLER v0.1.4
+PCK UNINSTALLER v0.1.6
 
 Author = Darel French Senior Support
 
@@ -50,13 +53,13 @@ def goodbye():
 
 def error_printer():
     error_type = exc_info()[0].__name__
-    error_file = os.path.basename(exc_info()[2].tb_frame.f_code.co_filename)
     error_line = exc_info()[2].tb_lineno
-    print("error type : {0}, on line: {2}".format(error_type, error_line))
+    print("error type : {0}, on line: {1}".format(error_type, error_line))
+    logger.info("error type : {0}, on line: {1}".format(error_type, error_line))
 
 
 def main():
-    global start_script, end_script, answer
+    global start_script, end_script, answer, Program_Files, logger
     reponse = ""
     while reponse != 1 and reponse != 2 :
         try:
@@ -67,7 +70,15 @@ def main():
 
     if reponse == 1:
         try:
-            start_script = ctime()
+            a = datetime.now()
+            logger = logging.getLogger("uninstaller")
+            fileToLog = logging.FileHandler("PCK_Log-{0}.log".format(a.strftime(FORMAT)))
+            logFormat = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+            fileToLog.setFormatter(logFormat)
+            logger.addHandler(fileToLog)
+            logger.setLevel(logging.DEBUG)
+            logger.info("Started the uninstall process")
+            Program_Files = os.environ["ProgramFiles"]
             thread1 = Thread(target=get_software, args=())
             thread2 = Thread(target=remove_files_and_dirs, args=())
             thread3 = Thread(target=delete_scheduled_task, args=())
@@ -77,36 +88,32 @@ def main():
             """ REMEMBER TO SPEEED UP THE SID FUNC"""
             pckav_or_pcklive()
             print("\nEtape 2: RESTORE POINT\n")
+            start_script = ctime()
             restore_point()
             get_users()
             thread1.start()
             print("\nEtape 1: BACKUP REGISTRY\n")
+            logger.info("Started to create a registry backup")
             thread4.start()
+            logger.info("Deleting scheduled task")
             thread3.start()
             clear_func()
             print("\nEtape 3: DELETE SCHEDULED TASK\n")
             clear_func()
             print("\nEtape 4: UNINSTALLING PCK SOFTWARE\n")
             sub.call("taskkill /im explorer.exe /f")
-            if answer != 1 and answer != 2:
-                try:
-                    sub.call('RD /S /Q "{folder}"'.format(folder="{0}\Essentware".format(Program_Files)), shell=True)
-                except:
-                    pass
-            if answer == 1:
-                try:
-                    sub.call('RD /S /Q "{folder}"'.format(folder="{0}\Essentware\PCKeeper".format(Program_Files)), shell=True)
-                except:
-                    pass
-            if answer == 2:
-                try:
-                    sub.call('RD /S /Q "{folder}"'.format(folder="{0}\Essentware\PCKAV".format(Program_Files)), shell=True)
-                except:
-                    pass
+            kill_service_and_process()
+            logger.info("Unregistring PCKEEPER dlls")
+            unregistreDllFiles("Essentware")
+            unregistreDllFiles("Kromtech")
             restart_explorer()
             thread5.start()
             thread1.join()
+            logger.info("Starting the uninstall method")
             uninstalling_pck()
+            logger.info("Started to remove pckeeper dirs")
+            remove_program_file_data()
+            logger.info("Done removing pckeeper dirs")
             thread2.start()
             thread6.start()
             clear_func()
@@ -119,8 +126,9 @@ def main():
             thread2.join()
             thread6.join()
             end_script = ctime()
+            logger.info("Finished the uninstall process ")
             goodbye()
-            sleep(6)
+            sleep(8)
             main()
 
         except KeyboardInterrupt:
@@ -153,6 +161,37 @@ def color_white():
 
 def clear_func():
     sub.call("cls", stderr=sub.PIPE, shell=True)
+
+
+
+def unregistreDllFiles(folder):
+    def getDllFiles():
+        global Program_Files
+        if answer != 1 and answer != 2:
+            for root, dirs, files in os.walk("{0}\{1}".format(Program_Files, folder)):
+                for f in files:
+                    if ".dll" in f:
+                        yield os.path.join(root, f)
+        if answer == 1:
+            if os.path.isdir("{0}\{1}\PCKeeper".format(Program_Files, folder)):
+                for root, dirs, files in os.walk("{0}\{1}\PCKeeper".format(Program_Files, folder)):
+                    for f in files:
+                        if ".dll" in f:
+                            yield os.path.join(root, f)
+            elif os.path.isdir("{0}\{1}\PCKeeper3".format(Program_Files, folder)):
+                for root, dirs, files in os.walk("{0}\{1}\PCKeeper3".format(Program_Files, folder)):
+                    for f in files:
+                        if ".dll" in f:
+                            yield os.path.join(root, f)
+        if answer == 2:
+            for root, dirs, files in os.walk("{0}\{1}\PCKAV".format(Program_Files, folder)):
+                for f in files:
+                    if ".dll" in f:
+                        yield os.path.join(root, f)
+
+    for f in getDllFiles():
+        sub.call(r'regsvr32 /u /s /c "{0}"'.format(f), stderr=sub.PIPE, shell=True)
+    return
 
 
 def pckav_or_pcklive():
@@ -188,48 +227,70 @@ WARNING: If there is only one software on the computer and you want to delete it
             break
 
     answer = int(answer)
-    if answer == 1:
-        displayname = ['PCKeeper', 'PCKLang.fr', 'PCKLang.en', 'PCKLang.it', 'PCKLang.es', 'PCKLang.ko']
-    if answer == 2:
-        displayname = ['PCKeeper Antivirus', 'PCKAVLang.fr', 'PCKAVLang.en', 'PCKAVLang.it', 'PCKAVLang.es', 'PCKAVLang.ko']
-    if answer == 3:
-        displayname = ['PCKeeper', 'PCKeeper Antivirus', 'PCKLang.fr', 'PCKLang.en', 'PCKLang.it', 'PCKLang.es', 'PCKAVLang.fr', 'PCKAVLang.en', 'PCKAVLang.it', 'PCKAVLang.es', 'PCKLang.ko', 'PCKAVLang.ko']
+    #list of know language 'PCKLang.fr','PCKLang.en','PCKLang.it','PCKLang.es','PCKAVLang.fr','PCKAVLang.en','PCKAVLang.it','PCKAVLang.es','PCKLang.ko','PCKAVLang.ko'}
+    displayname = set()
     command_to_uninstall = []
 
 
 def get_users():
     """This function help to get all user account"""
-    global list_users
+    logger.info("Started to get a list of users")
+    global list_users, list_lang
+    list_lang = {'uk_':'cp866','ua':'cp866', 'ru_':'cp866', 'ar_':'cp720', 'da_':'cp865', 'west1':'cp850', 'west2':'cp858'}
     clear_func()
     list_users = {os.environ["USERNAME"]: 'FALSE'}
-    temp = sub.check_output("wmic useraccount get Name,Disabled", shell=True).decode("utf-8").split("\r\r\n")
-    temp.pop(0)
-    temp.pop(-1)
-    temp.pop(-1)
-
-    for user in temp:
+    try:
+        temp = sub.check_output("wmic useraccount get Name,Disabled", shell=True)
         try:
-            temp1 = re.sub(r"\s+", ":", user)
-            temp1 = temp1.split(":")
-            list_users[temp1[1]] = temp1[0]
-        except IndexError:
-            pass
+            print("\nUsing default utf-8 encoding to decrypt username on the computer\n")
+            temp = temp.decode()
+        except UnicodeDecodeError:
+            for lang in list_lang.keys():
+                if lang in getdefaultlocale()[0]:
+                    try:
+                        print("\nHum seems like usernames letter are not English\nLet me try another language encoding\n")
+                        temp = temp.decode(list_lang[lang]) 
+                    except UnicodeDecodeError:
+                        print("\nNo matching encoding found, so i will use my own custom decoder\n")
+                        temp = temp.decode(list_lang['west1'])
+                elif lang == 'west1':
+                    temp = temp.decode(list_lang[lang])
+
+        temp = temp.split("\r\r\n")
+        temp.pop(0)
+        temp.pop(-1)
+        temp.pop(-1)
+        temp = (x for x in temp)
+        
+        for user in temp:
+            try:
+                temp1 = re.sub(r"\s+", ":", user)
+                temp1 = temp1.split(":")
+                list_users[temp1[1]] = temp1[0]
+            except IndexError:
+                pass
+
+    except UnicodeDecodeError:
+        print("\nFailed to get user list by first method trying the second method\n")
+        list_users = {os.environ["USERNAME"]: 'FALSE'}
+        for user in os.listdir(r"{0}\{1}".format(os.environ["SYSTEMDRIVE"], os.environ["HOMEPATH"][0:6])):
+            list_users[r"{0}".format(user)] = 'FALSE'
 
     if len(list_users) > 3:
         try:
             temp = sub.check_output("wmic ComputerSystem get Domain", shell=True).decode("utf-8")       
             if os.environ["USERDOMAIN"].lower() in temp or os.environ["USERDOMAIN"].upper() in temp:
                 is_domain = True
-                check = "Detected {0} users in  Domain {1}.lcl\nDo you want me to check all user folders or only those which are on this computer ?\nType 'A' for all users and 'C' for users on this computer\n".format(len(list_users), os.environ["USERDOMAIN"])
+                check = "Detected {0} users in  Domain {1}.lcl\nDo you want me to check all user folders or only those which are on this computer ?\n\nType 'A' for all users and 'C' for users on this computer\n".format(len(list_users), os.environ["USERDOMAIN"])
                 print(check)
                 choice = input(">>> ").lower()
             else:
                 is_domain = False
-                check = "Detected {0} users\nDo you want me to check all user folders or only those which are on this computers?\nType 'A' for all users and 'C' for users on this computer\n".format(len(list_users))
+                check = "Detected {0} users\nDo you want me to check all user folders or only those which are on this computers?\n\nType 'A' for all users and 'C' for users on this computer\n".format(len(list_users))
                 print(check)
                 choice = input(">>> ").lower()
         except KeyError:
-            check = "Detected {0} users\nDo you want me to check all user folders or only those which are on this computers?\nType 'A' for all users and 'C' for users on this computer\n".format(len(list_users))
+            check = "Detected {0} users\nDo you want me to check all user folders or only those which are on this computers?\n\nType 'A' for all users and 'C' for users on this computer\n".format(len(list_users))
             print(check)
             choice = input(">>> ").lower()
 
@@ -245,7 +306,7 @@ def get_users():
                 return
             else:
                 list_users = {os.environ["USERNAME"]: 'FALSE'}
-                for user in os.listdir(r"{0}\Users".format(os.environ["SYSTEMDRIVE"])):
+                for user in os.listdir(r"{0}\{1}".format(os.environ["SYSTEMDRIVE"], os.environ["HOMEPATH"][0:6])):
                     list_users[user] = 'FALSE'
                 print("\nOk, i will check all {0} users in the computer\n".format(len(list_users)))
                 return
@@ -254,7 +315,7 @@ def get_users():
             if is_domain:
                 list_users = dict()
                 list_users = {os.environ["USERNAME"]: 'FALSE'}
-                for user in os.listdir(r"{0}\Users".format(os.environ["SYSTEMDRIVE"])):
+                for user in os.listdir(r"{0}\{1}".format(os.environ["SYSTEMDRIVE"], os.environ["HOMEPATH"][0:6])):
                     list_users[user] = 'FALSE'
                 print("\nOk, i will check all {0} users in the computer\n".format(len(list_users)))
                 return
@@ -291,6 +352,7 @@ def launch_func():
 
 def restore_point():
     """This function create the restore point"""
+    logger.info("Checking if possible to create restore point")
     clear_func()
     disk = os.environ['SYSTEMDRIVE']
     free_space = str(sub.check_output('wmic /node:"%COMPUTERNAME%" LogicalDisk Where DriveType="3" Get DeviceID,FreeSpace|find /I "{0}"'.format(disk), shell=True))
@@ -302,6 +364,7 @@ def restore_point():
         print("\nFree Space on Disk {0}\ is {1:.2f}GB\n20GB is the minimum amount recommended".format(disk, free_space))
         color_white()
         if free_space < 20:
+            logger.info("*Not enough space to create a restore point")
             choice = input("\n*Not enough space to create a restore point, do you want me to skip the backup?\nyes to skip and no to exit: ")
             if choice.lower() == "y" or choice.lower() == "yes":
                 return
@@ -319,48 +382,88 @@ def restore_point():
                 sub.call("vssadmin Resize ShadowStorage /For={0} /On={0} /Maxsize={1}GB".format(disk, resize_value), shell=True)
             update = wmi.WMI(moniker="winmgmts:root/default:SystemRestore")
             try:
+                logger.info("Started to create a restore point")
                 update.CreateRestorePoint ("PCK SOFTWARE REMOVER", 100, 1)
                 print("\nSuccessfully created the resotre point\n")
+                logger.info("Successfully created the resotre point")
                 return True
             except :
                 print("\nSystem restore not enabled , enabling it!\n")
+                logger.info("Successfully created the resotre point")
                 update.Enable ("{0}".format(disk[0]))
                 update.CreateRestorePoint ("PCK SOFTWARE REMOVER", 100, 1)
-                print("\Successfully created the resotre point\n")
+                print("\nSuccessfully created the resotre point\n")
+                logger.info("Successfully created the resotre point")
                 return True
     except AttributeError:
         print("\nCouldn't Get The Free Space on Disk {0}\n".format(disk))
+        logger.info("Couldn't Get The Free Space on Disk {0}\n".format(disk))
         return True
 
 
 def uninstalling_pck():
     """This function help to uninstall PCKeeper Software"""
-    global displayname, command_to_uninstall    
+    global displayname, command_to_uninstall, answer, disk
     uninstaller = wmi.WMI()
     sub.call("cls", shell=True)
     print ("\nSearching for PCKeeper products...\n")
 
-    for soft in displayname:
-        for product in uninstaller.Win32_Product(Name = soft):
-            print ("\nUninstalling  {0}...\n".format(product.Name))
-            try:
-                result = product.Uninstall()
-            except :
-                pass
+    if answer == 1:
+        try:
+            sub.call(r"{0}\ProgramData\Essentware\installer.exe /UNINSTPCK".format(disk), shell=True)
+            sub.call(r"{0}\ProgramData\Essentware\installer3.exe /UNINSTPCK".format(disk), shell=True)
+        except sub.CalledProcessError:
+            pass
+    if answer == 2:
+        try:
+            sub.call(r"{0}\ProgramData\Essentware\installer.exe /UNINSTSEC".format(disk), shell=True)
+        except sub.CalledProcessError:
+            pass
+    if answer != 1 and answer != 2:
+        try:
+            sub.call(r"{0}\ProgramData\Essentware\installer.exe /UNINSTPCK".format(disk), shell=True)
+        except sub.CalledProcessError:
+            pass
+        try:
+            sub.call(r"{0}\ProgramData\Essentware\installer3.exe /UNINSTPCK".format(disk), shell=True)
+        except sub.CalledProcessError:
+            pass
+        try:
+            sub.call(r"{0}\ProgramData\Essentware\installer.exe /UNINSTSEC".format(disk), shell=True)
+        except sub.CalledProcessError:
+            pass
 
+    for soft in displayname:
+        try:
+            logger.info("Searching {} in the software list ".format(soft))
+            softwareList = uninstaller.Win32_Product(Name = soft)
+        except :
+            logger.error("Error while checking : {}".format(soft));
+            continue
+        if softwareList != []:
+            for product in softwareList:
+                logger.info("Found {} in the software list ".format(soft))
+                print ("\nUninstalling  {0}...\n".format(product.Name))
+                try:
+                    product.Uninstall()
+                except :
+                    continue
     for command in command_to_uninstall:
         try:
+            logger.info("Started to remove software with command line {0}".format(command))
             sub.call(command, stderr=sub.PIPE, shell=True)
         except sub.CalledProcessError :
+            logger.error("a error occured with this command : {}".format(command))
             pass
-    return "\nDONE WITH THE UNINSTALLING PCKEEPER SOFTWARE\n"
+    logger.info("DONE WITH UNINSTALLING PCKEEPER SOFTWARE")
+    return "\nDONE WITH UNINSTALLING PCKEEPER SOFTWARE\n"
 
 
 def get_software():
-    global answer
     """This function help to found PCKeeper Software in the registry
        And it's also check for pckeeper MSI FILES """
-    global displayname, command_to_uninstall, msi_files, msi_files2
+    global answer, displayname, command_to_uninstall, msi_files, msi_files2
+    logger.info("Started to get a list of PCKEEPER software")
 
     if answer != 1 and answer != 2:
         try:
@@ -383,7 +486,7 @@ def get_software():
         except sub.CalledProcessError :
             pass
 
-    key_folders = [r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", r'SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall']
+    key_folders = (key for key in [r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", r'SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'])
 
     for keyVal in key_folders:
         subkey = []
@@ -406,80 +509,229 @@ def get_software():
                 dispname = winreg.QueryValueEx(akey, 'DisplayName')
 
                 if answer == 1:
-                    if 'PCKeeper' in dispname[0] and 'PCKeeper Antivirus' not in dispname[0]:
+                    if ('PCKeeper' in dispname[0] and 'PCKeeper Antivirus' not in dispname[0]) or 'PCKLang' in dispname[0]:
                         try:
-                            displayname.append(dispname[0])
+                            if 'PCKLang' in dispname[0]:
+                                logger.info("Found {}, adding it to the list of software to uninstall".format(dispname[0]))
+                                displayname.add(dispname[0])
+                            
                             command = winreg.QueryValueEx(akey, 'UninstallString')
-                            command_to_uninstall.append(command[0])
+                            if 'PCKLang' not in dispname[0]:
+                                command_to_uninstall.append(command[0])
+                            
                         except WindowsError:
                             pass
 
                 elif answer == 2:
-                    if 'PCKeeper Antivirus' in dispname[0]:
+                    if 'PCKeeper Antivirus' in dispname[0] or 'PCKAVLang' in dispname[0]:
                         try:
-                            displayname.append(dispname[0])
+                            if 'PCKLang' in dispname[0]:
+                                logger.info("Found {}, adding it to the list of software to uninstall".format(dispname[0]))
+                                displayname.add(dispname[0])
+                            
                             command = winreg.QueryValueEx(akey, 'UninstallString')
-                            command_to_uninstall.append(command[0])
+                            if 'PCKAVLang' not in dispname[0]:
+                                command_to_uninstall.append(command[0])
+                            
                         except WindowsError:
                             pass
 
                 else:
                     if 'PCK' in dispname[0]:
                         try:
-                            displayname.append(dispname[0])
+                            if 'PCKAVLang' in dispname[0] or 'PCKLang' in dispname[0]:
+                                logger.info("Found {}, adding it to the list of software to uninstall".format(dispname[0]))
+                                displayname.add(dispname[0])
+    
                             command = winreg.QueryValueEx(akey, 'UninstallString')
-                            command_to_uninstall.append(command[0])
+                            if 'PCKAVLang' not in dispname[0] or 'PCKLang' not in dispname[0]:
+                                command_to_uninstall.append(command[0])
+                            
                         except WindowsError:
                             pass
                     if 'AccountService' in dispname[0]:
                         try:
-                            displayname.append(dispname[0])
+                            logger.info("Found {}, adding it to the list of software to uninstall".format(dispname[0]))
+                            displayname.add(dispname[0])
                             command = winreg.QueryValueEx(akey, 'UninstallString')
                             command_to_uninstall.append(command[0])
                         except WindowsError:
                             pass
             except WindowsError:
                 pass
+    logger.info("Finished to get a list of PCKEEPER software")
     return True
 
+def remove_program_file_data():
+    logger.info("Started to remove pckeeper dirs")
+    Program_Files = os.environ["ProgramFiles"]
+    program_data = os.environ['PROGRAMDATA']
+    app_local = os.environ['LOCALAPPDATA']
+    programdata_dir = (folder for folder in ['Essentware', 'Kromtech', 'Microsoft\Windows\Start Menu\Programs\Essentware', 'Microsoft\Windows\Start Menu\Programs\Kromtech','Application Data\Essentware', 'Application Data\Kromtech'])
+    programfil_dir = (folder for folder in ['Essentware', 'Kromtech'])
+    pckav_programfile_folder = (folder for folder in [r'Essentware\PCKAV', r'Kromtech\PCKAV'])
+    pckav_programdata_folder = (folder for folder in ['Essentware\PCKAV', r'Microsoft\Windows\Start Menu\Programs\Essentware\PCKeeper Antivirus'])
+    pckeeper_programfile_folder = (folder for folder in [r'Essentware\PCKeeper', r'Kromtech\PCKeeper', r'Essentware\PCKeeper3'])
+    pckeeper_programdata_folder = (folder for folder in ['Essentware\PCKeeper', 'Essentware\PCKeeper3', r'Microsoft\Windows\Start Menu\Programs\Essentware\PCKeeper', r'Microsoft\Windows\Start Menu\Programs\Essentware\PCKeeper3'])
+    
+    def delete_dirs(folder):
+        """FUNCTION TO DELETE PCKEEPER DIRS """
+        try:
+            try:
+                #THIS LINE GIVE THE CURRENT USER OWNERSHIP OF PCKEEPER FOLDER
+                sub.call('icacls "{0}" /setowner {1} /T /C'.format(folder, os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
+            except sub.CalledProcessError :
+                pass
+            try:
+                #THIS LINE GRANT ALL PERMISSION ON PCKEEPER FOLDER FOR THE CURRENT USER
+                sub.call('icacls "{0}" /grant {1}:(OI)(CI)F /T /C'.format(folder, os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
+            except sub.CalledProcessError :
+                pass
+            try:
+                #THIS LINE DELETE PCKEEPER FOLDER RECURSIVELLY
+                sub.call('RD /S /Q "{0}"'.format(folder), stdout=FNULL, stderr=sub.STDOUT, shell=True)
+            except sub.CalledProcessError :
+                pass
+        except sub.CalledProcessError :
+            pass          
+        except FileNotFoundError :
+            pass
+
+    if answer != 1 and answer != 2:
+        os.chdir(Program_Files)
+        for folder in programfil_dir:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+        os.chdir(program_data)
+        for folder in programdata_dir:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+        os.chdir(app_local)
+        for folder in ['Essentware', 'Kromtech', 'essentware']:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+    if answer == 1:
+        os.chdir(Program_Files)
+        for folder in pckeeper_programfile_folder:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+        os.chdir(program_data)
+        for folder in pckeeper_programdata_folder:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+    if answer == 2:
+        os.chdir(Program_Files)
+        for folder in pckav_programfile_folder:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+        os.chdir(program_data)
+        for folder in pckav_programdata_folder:
+            try:
+                delete_dirs(folder)
+                if os.path.isdir('{0}'.format(folder)) == False:                
+                    continue
+                else:
+                    shutil.rmtree('{0}'.format(folder))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+    logging.info("Remove dirs Done") 
 
 def remove_files_and_dirs():
     """This function help to remove PCKeeper dirs and files"""
     global msi_file, msi_file2, list_users
     global answer
-
+    usersFolder = os.environ["HOMEPATH"].split("\\");usersFolder.pop(0);usersFolder.pop(-1);
+    usersFolder = "".join(usersFolder)
+    logging.info("Started removing Files")
     disk = os.environ['SYSTEMDRIVE']
     Program_Files = os.environ["ProgramFiles"]
 
     if platform.machine == 'AMD64':
         Program_Files_x86 = os.environ("ProgramFiles(x86)")
     program_data = os.environ['PROGRAMDATA']
-    local_temporary_dir = r'{0}\Users\{1}\AppData\Local\Temp'
-    local_appdata = r"{0}\Users\{1}\AppData\Local"
+    local_temporary_dir = r'{0}\{1}\{2}\AppData\Local\Temp'
+    local_appdata = r"{0}\{1}\{2}\AppData\Local"
     app_data = os.environ['APPDATA']
     public_folder = os.environ['PUBLIC']
-    file_in_programfile = [r'Essentware\Common\AccountService.exe', r'Essentware\PCKAV\PCKAVService.exe', r'Essentware\PCKeeper\OneClickFixService.exe', r'Essentware\PCKeeper\fileHiders.exe', r'Essentware\PCKeeper\fileHiders.sys', r'Essentware\PCKAV\zeoscanner.exe', r'Essentware\PCKAV\zeoscanner.sys']
-    programdata_dir = ['Essentware', 'Kromtech', 'Microsoft\Windows\Start Menu\Programs\Essentware', 'Microsoft\Windows\Start Menu\Programs\Kromtech','Application Data\Essentware', 'Application Data\Kromtech']
-    programfil_dir = ['Essentware', 'Kromtech']
-    app_data_dir = ['Essentware', 'Kromtech']
-    file_in_drivers = [r'{0}\Windows\system32\drivers\fileHiders.sys', r'{0}\Windows\system32\drivers\zeoscanner.sys', r'{0}\Windows\PCKeeperCore.pdb', r'{0}\Windows\SysNative\drivers\fileHiders.sys', r'{0}\Windows\SysNative\drivers\zeoscanner.sys']
-    app_localdata = ['Essentware', 'Kromtech']
-    app_local_temp = [r'PCK640.msi', r'PCKAV320.msi', r'AccountSvc320.msi', r'AccountSvc640.msi', r'PCKLang.fr.x640.msi', r'installer0.exe', r'PCKLang.it.x640.msi', r'PCKLang.en.x640.msi']
+    app_data_dir = (folder for folder in ['Essentware', 'Kromtech'])
+    file_in_drivers = (file for file in [r'{0}\Windows\system32\drivers\fileHiders.sys', r'{0}\Windows\system32\drivers\zeoscanner.sys', r'{0}\Windows\PCKeeperCore.pdb', r'{0}\Windows\SysNative\drivers\fileHiders.sys', r'{0}\Windows\SysNative\drivers\zeoscanner.sys'])
+    app_localdata = (folder for folder in ['Essentware', 'Kromtech'])
+    app_local_temp = (file for file in [r'PCK640.msi', r'PCKAV320.msi', r'AccountSvc320.msi', r'AccountSvc640.msi', r'PCKLang.fr.x640.msi', r'installer0.exe', r'PCKLang.it.x640.msi', r'PCKLang.en.x640.msi'])
     usage_log = [r"{0}\Users\{username}\AppData\Local\Microsoft\CLR_v4.0\UsageLogs\PCKeeper.exe", r"{0}\Users\{username}\AppData\Local\Microsoft\CLR_v4.0\UsageLogs\CrashReportSender.exe"]
-    windows_prefetch = ['{0}\Windows\Prefetch\PCKAVSERVICE', '{0}\Windows\Prefetch\INSTALLER0', '{0}\Windows\Prefetch\ACCOUNTSERVICE', '{0}\Windows\Prefetch\CRASHREPORTSENDER', '{0}\Windows\Prefetch\ONECLICKFIXSERVICE', '{0}\Windows\Prefetch\PCKAV', '{0}\Windows\Prefetch\PCKEEPER INSTALLER', '{0}\Windows\Prefetch\PCKEEPER ANTIVIRUS INSTALLER', '{0}\Windows\Prefetch\PCKEEPER']
-    pck_icons = [r'{0}\Desktop\PCKeeper.lnk', r'{0}\Desktop\PCKeeper Antivirus.lnk']
-    pck_icons2 = [r'IconPCKeeper.exe', r'IconPCKAV.exe']
-    pckeeper_files = [r'{0}\Windows\system32\drivers\fileHiders.sys', r'{0}\Windows\PCKeeperCore.pdb', r'{0}\Windows\SysNative\drivers\fileHiders.sys', r'{0}\Users\Public\Desktop\PCKeeper.lnk', r'{0}\ProgramData\Essentware\Installer\PCKeeper Installer.exe0.llog']
-    pck_programfile_folder = [r'Essentware\PCKeeper', r'Essentware\PCKAV', r'Kromtech\PCKeeper', r'Kromtech\PCKAV']
-    pckeeper_programdata_folder = ['Essentware\PCKeeper', 'Essentware\PCKeeper', r'Microsoft\Windows\Start Menu\Programs\Essentware\PCKeeper']
-    pckav_files = [r'{0}\Windows\SysNative\drivers\zeoscanner.sys', r'{0}\Users\Public\Desktop\PCKeeper Antivirus.lnk', r'{0}\ProgramData\Essentware\Installer\PCKeeper Antivirus Installer.exe0.llog']
-    pckav_programdata_folder = ['Essentware\PCKAV', 'Essentware\PCKAV', r'Microsoft\Windows\Start Menu\Programs\Essentware\PCKeeper Antivirus']
+    windows_prefetch = (folder for folder in ['{0}\Windows\Prefetch\PCKAVSERVICE', '{0}\Windows\Prefetch\INSTALLER0', '{0}\Windows\Prefetch\ACCOUNTSERVICE', '{0}\Windows\Prefetch\CRASHREPORTSENDER', '{0}\Windows\Prefetch\ONECLICKFIXSERVICE', '{0}\Windows\Prefetch\PCKAV', '{0}\Windows\Prefetch\PCKEEPER INSTALLER', '{0}\Windows\Prefetch\PCKEEPER ANTIVIRUS INSTALLER', '{0}\Windows\Prefetch\PCKEEPER'])
+    pck_icons = (icon for icon in [r'{0}\Desktop\PCKeeper.lnk', r'{0}\Desktop\PCKeeper Antivirus.lnk'])
+    pck_icons2 = (icon for icon in [r'IconPCKeeper.exe', r'IconPCKAV.exe'])
+    pckeeper_files = (file for file in [r'{0}\Windows\system32\drivers\fileHiders.sys', r'{0}\Windows\PCKeeperCore.pdb', r'{0}\Windows\SysNative\drivers\fileHiders.sys', r'{0}\Users\Public\Desktop\PCKeeper.lnk', r'{0}\ProgramData\Essentware\Installer\PCKeeper Installer.exe0.llog']) 
+    pckav_files = (file for file in [r'{0}\Windows\SysNative\drivers\zeoscanner.sys', r'{0}\Users\Public\Desktop\PCKeeper Antivirus.lnk', r'{0}\ProgramData\Essentware\Installer\PCKeeper Antivirus Installer.exe0.llog'])
     
     #THIS LINE CREATE 14 THREAD THAT WILL ACTIVELLY KILL PCKEEPER SOFTWARE OR SERVICE IF THEY TRY TO BE CREATE OR START
     for killer in range(14):
         t = Thread(target=kill_service_and_process())
         t.start()
 
+    if (answer != 1 and answer != 2) or answer == 2:
+        for file in pckav_files:
+            try:
+                sub.call('del /f /s /q "{0}"'.format(file.format(disk)), stdout=FNULL, stderr=sub.STDOUT, shell=True)
+            except sub.CalledProcessError :
+                pass
+    
     def delete_dirs(folder):
         """FUNCTION TO DELETE PCKEEPER DIRS """
         try:
@@ -521,85 +773,61 @@ def remove_files_and_dirs():
             pass
         except OSError as e:
             pass
-
-    if answer == 1 or answer == 2:
-        os.chdir(Program_Files)
-        print("\nCurrent directory : {0}\n".format(os.getcwd()))
-        for folder in pck_programfile_folder:
-            if answer == 1 and 'PCKeeper' in folder:
-               try:
-                   delete_dirs(folder)
-                   if os.path.isdir('{0}'.format(folder)) == False:                
-                       continue
-                   else:
-                       shutil.rmtree('{0}'.format(folder))
-
-               except sub.CalledProcessError :
-                   pass
-               except FileNotFoundError :
-                   pass
-
-            elif answer == 2 and 'PCKAV' in folder:
-                try:
-                    delete_dirs(folder)
-                    if os.path.isdir('{0}'.format(folder)) == False:                
-                       continue
-                    else:
-                        shutil.rmtree('{0}'.format(folder))
-                except sub.CalledProcessError :
-                    pass          
-                except FileNotFoundError :
-                    pass
     
     if answer == 1:
         os.chdir(program_data)
-        print("\nCurrent directory : {0}\n".format(os.getcwd()))
-        for folder in pckeeper_programdata_folder:
-            try:
-                delete_dirs(folder)
-                if os.path.isdir('{0}'.format(folder)) == False:                
-                    continue
-                else:
-                    shutil.rmtree('{0}'.format(folder))
-            except sub.CalledProcessError :
-                pass
-            except FileNotFoundError :
-                pass
-        for file in pckeeper_files:
-            delete_files(file.format(disk))
-            if os.path.isfile(file) == False:
-                continue
-            else:
-                os.remove(file)
-
-    if answer == 2:
-        os.chdir(program_data)
-        print("\nCurrent directory : {0}\n".format(os.getcwd()))
-        for folder in pckav_programdata_folder:
-            try:
-                delete_dirs(folder)
-                if os.path.isdir('{0}'.format(folder)) == False:                
-                    continue
-                else:
-                    shutil.rmtree('{0}'.format(folder))
-            except sub.CalledProcessError :
-                pass
-            except FileNotFoundError :
-                pass
         for file in pckeeper_files:
             try:
                 delete_files(file.format(disk))
-                if os.path.isfile(file) == False:
+                if os.path.isfile(file.format(disk)) == False:
                     continue
                 else:
-                    os.remove(file)
+                    os.remove(file.format(disk))
+            except sub.CalledProcessError :
+                pass
+            except FileNotFoundError :
+                pass
+
+    if answer == 2:
+        os.chdir(program_data)
+        logger.info("Current directory : {0}".format(os.getcwd()))
+        print("\nCurrent directory : {0}\n".format(os.getcwd()))
+        for file in pckav_files:
+            try:
+                delete_files(file.format(disk))
+                if os.path.isfile(file.format(disk)) == False:
+                    continue
+                else:
+                    os.remove(file.format(disk))
             except sub.CalledProcessError :
                 pass
             except FileNotFoundError :
                 pass
 
     if answer != 1 and answer != 2:
+        for user in list_users.keys():
+            if list_users[user] == 'FALSE':
+                try:
+                    os.chdir(local_appdata.format(disk,usersFolder, user))
+                    logger.info("Current directory : {0}".format(os.getcwd()))
+                    print("\nCurrent directory : {0}\n".format(os.getcwd()))
+                    for folder in app_localdata:
+                        try:
+                            delete_dirs(folder)
+                            if os.path.isdir(r'{0}\{1}'.format(local_appdata.format(disk,usersFolder, user), folder)) == False:                
+                                continue
+                            else:
+                                shutil.rmtree(r'{0}\{1}'.format(local_appdata.format(disk,usersFolder, user), folder))
+                        except sub.CalledProcessError :    
+                            continue
+        
+                        except FileNotFoundError :
+                            pass
+                except FileNotFoundError:
+                    continue
+
         os.chdir(app_data)
+        logger.info("Current directory : {0}".format(os.getcwd()))
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for folder in app_data_dir:
             try:
@@ -614,41 +842,17 @@ def remove_files_and_dirs():
                 pass
         
         os.chdir(Program_Files)
+        logger.info("Current directory : {0}".format(os.getcwd()))
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
-        for folder in programfil_dir:
-            try:
-                delete_dirs(folder)
-                if os.path.isdir('{0}'.format(folder)) == False:                
-                    continue
-                else:
-                    shutil.rmtree('{0}'.format(folder))
-            except sub.CalledProcessError :
-                pass
-            except FileNotFoundError :
-                pass
-            
-        os.chdir(program_data)
-        print("\nCurrent directory : {0}\n".format(os.getcwd()))
-        for folder in programdata_dir:
-            try:
-                delete_dirs(folder)
-                if os.path.isdir('{0}'.format(folder)) == False:                
-                    continue
-                else:
-                    shutil.rmtree('{0}'.format(folder))
-            except sub.CalledProcessError : 
-                pass          
-            except FileNotFoundError :
-                pass
-
         for user in list_users.keys():
             if list_users[user] == 'FALSE':
                 try:
-                    os.chdir(local_temporary_dir.format(disk, user))
+                    os.chdir(local_temporary_dir.format(disk, usersFolder, user))
                     print("\nCurrent directory : {0}\n".format(os.getcwd()))
                     for file in app_local_temp:
                         delete_files(file)
                         if os.path.isfile(file) == False:
+                            logging.info("{} deleted or not found".format(file))
                             continue
                         else:
                             os.remove(file)
@@ -656,23 +860,13 @@ def remove_files_and_dirs():
                     continue
 
         os.chdir(os.environ["SYSTEMROOT"])
+        logger.info("Current directory : {0}".format(os.getcwd()))
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for file in usage_log:
             try:
-                try:
-                    sub.call('icacls "{0}" /setowner {1} /C'.format(file.format(disk, username=os.environ["USERNAME"]), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('icacls "{0}" /grant {1}:(OI)(CI)F /C'.format(file.format(disk, username=os.environ['USERNAME']), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('del /f /s /q "{0}"'.format(file.format(disk, username=os.environ['USERNAME'])), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-
+                delete_files(file.format(disk, username=os.environ["USERNAME"]))
                 if os.path.isfile('{0}'.format(file.format(disk, username=os.environ['USERNAME']))) == False:
+                    logging.info("{} deleted or not found".format(file.format(disk, username=os.environ['USERNAME'])))
                     continue
                 else:
                     os.remove(file.format(disk, username=os.environ['USERNAME']))
@@ -683,54 +877,14 @@ def remove_files_and_dirs():
             except OSError as e:
                 pass
 
-        for user in list_users.keys():
-            if list_users[user] == 'FALSE':
-                try:
-                    os.chdir(local_appdata.format(disk, user))
-                    print("\nCurrent directory : {0}\n".format(os.getcwd()))
-                    for folder in app_localdata:
-                        try:
-                            delete_dirs(folder)
-                            if os.path.isdir('{0}'.format(folder)) == False:                
-                                continue
-                            else:
-                                shutil.rmtree('{0}'.format(folder))
-                        except sub.CalledProcessError :    
-                            continue
-        
-                        except FileNotFoundError :
-                            pass
-                except FileNotFoundError:
-                    continue
-
         os.chdir(Program_Files)
-        print("\nCurrent directory : {0}\n".format(os.getcwd()))
-        for file in file_in_programfile:
-            try:
-                delete_files(file)
-            except sub.CalledProcessError :
-                pass
-
-            except OSError as e:    
-                pass
-
+        logger.info("Current directory : {0}".format(os.getcwd()))
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for file in usage_log:
             try:
-                try:
-                    sub.call('icacls "{0}" /setowner {1} /C'.format(file.format(disk, username=os.environ["USERNAME"]), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('icacls "{0}" /grant {1}:(OI)(CI)F /C'.format(file.format(disk, username=os.environ['USERNAME']), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('del /f /s /q "{0}"'.format(file.format(disk, username=os.environ['USERNAME'])), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-
+                delete_files(file.format(disk, username=os.environ["USERNAME"]))
                 if os.path.isfile('{0}'.format(file.format(disk, username=os.environ['USERNAME']))) == False:
+                    logging.info("{} deleted or not found".format(file.format(disk, username=os.environ['USERNAME'])))
                     continue
                 else:
                     os.remove(file.format(disk, username=os.environ['USERNAME']))
@@ -742,6 +896,7 @@ def remove_files_and_dirs():
                 pass
 
         os.chdir("{0}\Windows\Installer".format(disk))
+        logger.info("Current directory : {0}".format(os.getcwd()))
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for file in msi_files:
             a = re.search("(\d.+\S)", file, re.I)
@@ -763,6 +918,7 @@ def remove_files_and_dirs():
                 pass
 
         os.chdir("{0}\Windows\Installer".format(disk))
+        logger.info("Current directory : {0}".format(os.getcwd()))
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for file in msi_files2:
             a = re.search("(\d.+\S)", file, re.I)
@@ -782,21 +938,10 @@ def remove_files_and_dirs():
                 pass
 
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
+        logger.info("Current directory : {0}".format(os.getcwd()))
         for file in file_in_drivers:
             try:
-                try:
-                    sub.call('icacls "{0}" /setowner {1} /C'.format(file.format(disk), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('icacls "{0}" /grant {1}:(OI)(CI)F /C'.format(file.format(disk), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('del /f /s /q "{0}"'.format(file.format(disk)), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-            
+                delete_files(file.format(disk))
                 if os.path.isfile(file.format(disk)) == False:
                     continue
                 else:
@@ -811,19 +956,7 @@ def remove_files_and_dirs():
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for file in windows_prefetch:
             try:
-                try:
-                    sub.call('icacls "{0}" /setowner {1} /T /C'.format(file.format(disk), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('icacls "{0}" /grant {1}:(OI)(CI)F /C'.format(file.format(disk), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('del /f /s /q "{0}*"'.format(file.format(disk)), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-            
+                delete_files(file.format(disk))
                 if os.path.isfile(file.format(disk)) == False:
                     continue
                 else:
@@ -838,19 +971,7 @@ def remove_files_and_dirs():
         print("\nCurrent directory : {0}\n".format(os.getcwd()))
         for icon in pck_icons:
             try:
-                try:
-                    sub.call('icacls "{0}" /setowner {1} /T /C'.format(icon.format(public_folder), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('icacls "{0}" /grant {1}:(OI)(CI)F /C'.format(icon.format(public_folder), os.environ["USERNAME"]), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-                try:
-                    sub.call('del /f /s /q "{0}"'.format(icon.format(public_folder)), stdout=FNULL, stderr=sub.STDOUT, shell=True)
-                except sub.CalledProcessError :
-                    pass
-
+                delete_files(icon.format(public_folder))
                 if os.path.isfile(icon.format(public_folder)) == False:
                     continue
                 else:
@@ -898,12 +1019,12 @@ def remove_files_and_dirs():
 def kill_service_and_process():
     global answer
     Program_Files = os.environ["ProgramFiles"]
-    pckeeper_process = [r'PCKeeper.exe', r'PCKeeperService.exe', r'PCKElevatedHost.exe', r'fileHiders.exe', r'OneClickFixService.exe']
-    pckav_process = [r'PCKAV.exe', r'PCKAVService.exe', r'zeoscanner.exe']
-    pckeeper_services = ['PCKeeperOcfService', 'PCKeeper2Service', 'fileHiders']
-    pckav_services = ['PCKAVService', 'ZeoScanner'] 
-    process_to_kill = [r'PCKAV.exe', r'PCKeeper.exe', r'PCKAVService.exe', r'PCKeeperService.exe', r'OneClickFixService.exe', r'AccountService.exe', r'CrashReportSender.exe', r'PCKElevatedHost.exe', r'fileHiders.exe', r'zeoscanner.exe']
-    service_to_kill = ['PCKAVService', 'AccountService', 'PCKeeperOcfService', 'PCKeeper2Service', 'ZeoScanner', 'fileHiders']
+    pckeeper_process = (file for file in [r'PCKeeper.exe', r'PCKeeperService.exe', r'PCKElevatedHost.exe', r'fileHiders.exe', r'OneClickFixService.exe'])
+    pckav_process = (file for file in [r'PCKAV.exe', r'PCKAVService.exe', r'zeoscanner.exe'])
+    pckeeper_services = (service for service in ['PCKeeperOcfService', 'PCKeeper2Service', 'fileHiders', 'Pckeeper3Service', 'Pckeeper3OcfService'])
+    pckav_services = (service for service in ['PCKAVService', 'ZeoScanner']) 
+    process_to_kill = (service for service in [r'PCKAV.exe', r'PCKeeper.exe', r'PCKAVService.exe', r'PCKeeperService.exe', r'OneClickFixService.exe', r'AccountService.exe', r'CrashReportSender.exe', r'PCKElevatedHost.exe', r'fileHiders.exe', r'zeoscanner.exe'])
+    service_to_kill = (service for service in ['PCKAVService', 'AccountService', 'PCKeeperOcfService', 'PCKeeper2Service', 'ZeoScanner', 'fileHiders', 'Pckeeper3Service', 'Pckeeper3OcfService'])
 
     if answer == 2 or answer == 3:
         try:
@@ -991,19 +1112,19 @@ def delete_register():
         except sub.CalledProcessError:
             continue
 
-    hkl_root = [r'CLSID\{F55EA208-E122-4B4E-8483-4404A1CC9569}', r'CLSID\{990F7D4F-09EF-47DF-9ABE-BAF2DCCF5C4B}', r"Installer\Products\91D74906933C99B4986DCED8BF2A728B", r'*\shellex\ContextMenuHandlers\PCKAVShell32', r'*\ShellEx\{72DBECE7-D912-4A8F-841C-A521B7447463}', r'HKEY_CLASSES_ROOT\*\shellex\ContextMenuHandlers\PCKeeperShell32', r'CLSID\{00000323-0000-0000-C000-000000000046}']
-    hkl_local_machine = [r'SOFTWARE\Kromtech', r'SOFTWARE\Essentware', r'Software\Kromtech', r'Software\Essentware', r'SOFTWARE\Classes\AppID\{AF85DB83-06F2-4ECF-97CF-C46EDB06BE29}', r'SOFTWARE\Classes\CLSID\{990F7D4F-09EF-47DF-9ABE-BAF2DCCF5C4B}', r'SOFTWARE\Classes\AppID\{E8EB2F1F-661E-4A7F-8F9A-77DEB757A906}', r'SOFTWARE\Classes\CLSID\{6AF595D6-D4A0-4ACA-ADD4-62034EE9FF3A}', r'SOFTWARE\Classes\AppID\{56AD7EEE-D6C0-410E-8A7B-811DEA764554}', r'SOFTWARE\Classes\CLSID\{206E5E13-3B8F-4146-9C21-F18A63A9689B}', r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\PCKeeper Installer.exe', r'SOFTWARE\Classes\CLSID\{CF6E1E3B-5B36-4A71-9105-DC75B4089D8C}', r'SOFTWARE\Classes\CLSID\{0319DE47-F039-45DC-A213-DBB61C6AE509}', r'SOFTWARE\Classes\CLSID\{074BFF31-CA38-43C4-8F25-79213AD708EF}', r'SOFTWARE\Classes\CLSID\{0D838143-D511-4555-8B97-16C3CF5A780D}', r'SOFTWARE\Classes\CLSID\{16A94A89-66C4-4990-896C-5FC3E1557FFD}', r'SOFTWARE\Classes\CLSID\{2B5E8E95-F503-4530-A340-53DE89F3358F}', r'SOFTWARE\Classes\CLSID\{2F8F99FD-7C0E-4150-8DFD-13B1F4FBD916}', r'SOFTWARE\Classes\CLSID\{33B2A2E0-18F6-45CB-8080-04320066A4A1}', r'SOFTWARE\Classes\CLSID\{503F82AB-1549-4B08-AF10-289CCCF3BE4B}', r'SOFTWARE\Classes\CLSID\{6AF595D6-D4A0-4ACA-ADD4-62034EE9FF3A}', r'SOFTWARE\Classes\CLSID\{6F09F687-2C4C-4A37-8D7A-2CB76D2B3F71}', r'SOFTWARE\Classes\CLSID\{723F0E89-F10C-4D28-A46C-934513EA963A}', r'SOFTWARE\Classes\CLSID\{7944171A-50CC-479E-A6FC-B1E25E665C25}', r'SOFTWARE\Classes\CLSID\{7A2BA8C4-F382-4DD1-A6D2-A86C6D66C4F9}', r'SOFTWARE\Classes\CLSID\{80E9CB05-9C8B-4B85-8A66-D81092F5AF60}', r'SOFTWARE\Classes\CLSID\{817BF5D8-380E-44F4-8E61-43E7ECF74B53}', r'SOFTWARE\Classes\CLSID\{8888A22B-3380-4C2B-950F-A5B6EC527A4B}', r'SOFTWARE\Classes\CLSID\{9443C19D-B318-4EBD-8A7F-6A50D0472FB4}', r'SOFTWARE\Classes\CLSID\{95CAD169-7912-410E-8C8A-7BA1729BD8F7}', r'SOFTWARE\Classes\CLSID\{B462C1CA-E368-4321-B0B1-0453E4AB6FDB}', r'SOFTWARE\Classes\CLSID\{CCF68051-721D-40C7-812D-86ED0FDE7411}', r'SOFTWARE\Classes\CLSID\{D8F2F7F9-F8F3-4562-9FDA-C1E2DAE60A30}', r'SOFTWARE\Classes\CLSID\{DEE0443A-95B1-41DF-B50A-409FDEA53644}', r'SOFTWARE\Classes\CLSID\{F55EA208-E122-4B4E-8483-4404A1CC9569}', r'SOFTWARE\Classes\CLSID\{F6649783-7559-4772-96C7-02D33BEACD8C}', r'SOFTWARE\Classes\CLSID\{05562BE7-0EFC-4BD2-BD8F-FAA363E68410}', r'SOFTWARE\Classes\CLSID\{B52115B1-936F-4EEA-A363-A535FB1942B7}', r'SOFTWARE\Classes\TypeLib\{D062B23B-F8EE-40EC-BF3F-7DB0E9FE1232}', r'SOFTWARE\Classes\TypeLib\{D3F79FC5-65FE-4650-8979-3BF0CCF02C1A}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E44BBEE3-3F83-4670-9E2E-EE0556442287}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E7E7B26A-88AA-48B0-A47C-173C062FD904}', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\f', r'SOFTWARE\Classes\Interface\{CF6E1E3B-5B36-4A71-9105-DC75B4089D8C}', r'SOFTWARE\Classes\Interface\{0319DE47-F039-45DC-A213-DBB61C6AE509}', r'SOFTWARE\Classes\Interface\{074BFF31-CA38-43C4-8F25-79213AD708EF}', r'SOFTWARE\Classes\Interface\{0D838143-D511-4555-8B97-16C3CF5A780D}', r'SOFTWARE\Classes\Interface\{206E5E13-3B8F-4146-9C21-F18A63A9689B}', r'SOFTWARE\Classes\Interface\{2B5E8E95-F503-4530-A340-53DE89F3358F}', r'SOFTWARE\Classes\Interface\{6F09F687-2C4C-4A37-8D7A-2CB76D2B3F71}', r'SOFTWARE\Classes\Interface\{7A2BA8C4-F382-4DD1-A6D2-A86C6D66C4F9}', r'SOFTWARE\Classes\Interface\{8888A22B-3380-4C2B-950F-A5B6EC527A4B}', r'SOFTWARE\Classes\Interface\{D8F2F7F9-F8F3-4562-9FDA-C1E2DAE60A30}', r'SOFTWARE\Classes\Interface\{F6649783-7559-4772-96C7-02D33BEACD8C}', r'SYSTEM\CurrentControlSet\Services\PCKAVService', r'SYSTEM\CurrentControlSet\Services\PCKeeper2Service', r'SYSTEM\CurrentControlSet\Services\PCKeeperOcfService', r'SYSTEM\CurrentControlSet\Services\ZeoScanner', r'SYSTEM\CurrentControlSet\Services\fileHiders', r'SYSTEM\CurrentControlSet\Services\AccountService', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell64', 'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{61CF52DA-5F88-4487-A6EE-24BBC4CDA657}', r'SOFTWARE\Classes\Installer\Features\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Classes\Installer\Products\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\6746C1CA9DF5C304D9AD88BF2F78FE41', r'\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\107367941945A954DA989330ABE49075', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\91D74906933C99B4986DCED8BF2A728B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\107367941945A954DA989330ABE49075', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\C41354CBF8653FA42AA4FBFAD36CC2A2', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\92D40EBB025BF0941AB82BE495771AAD', r'SOFTWARE\Classes\AppID\{AF85DB83-06F2-4ECF-97CF-C46EDB06BE29}', r'SOFTWARE\Classes\AppID\{88A65C27-A2AA-4F9E-B767-A1C0FA236891}', r'SOFTWARE\Classes\AppID\{56AD7EEE-D6C0-410E-8A7B-811DEA764554}', r'SOFTWARE\Classes\AppID\PCKElevatedHost.exe', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{49763701-5491-459A-AD89-3903BA4E0957}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{60947D19-C339-4B99-89D6-EC8DFBA227B8}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{BBE04D29-B520-490F-A18B-B24E5977A1DA}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{BC45314C-568F-4AF3-A24A-BFAF3DC62C2A}', r'SOFTWARE\Classes\AppID\{0022E012-E49A-44D5-8F7B-CFE27B39CDF8}']
-    hkl_current_user = [r'Software\Essentware', r'SOFTWARE\Kromtech', r'Software\Classes\CLSID\{F55EA208-E122-4B4E-8483-4404A1CC9569}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run\PCKeeperLive', r'Software\Classes\CLSID\{F324E4F9-8496-40B2-A1FF-9617C1C9AFFE}', r'Software\Classes\CLSID\{75847177-f077-4171-bd2c-a6bb2164fbd0}', r'Software\Classes\CLSID\{374DE290-123F-4565-9164-39C4925E467B}', r'Software\Classes\CLSID\{E88DCCE0-B7B3-11d1-A9F0-00AA0060FA31}', r'Software\Classes\CLSID\{A07034FD-6CAA-4954-AC3F-97A27216F98A}', r'Software\Classes\CLSID\{00000323-0000-0000-C000-000000000046}', r'Software\Classes\WOW6432Node\CLSID\{F5078F32-C551-11D3-89B9-0000F81FE221}']
-    hkl_users = [r'{0}\Software\Essentware', r'{0}\Software\Kromtech']
+    hkl_root = (key for key in [r'CLSID\{F55EA208-E122-4B4E-8483-4404A1CC9569}', r'CLSID\{990F7D4F-09EF-47DF-9ABE-BAF2DCCF5C4B}', r"Installer\Products\91D74906933C99B4986DCED8BF2A728B", r'*\shellex\ContextMenuHandlers\PCKAVShell32', r'*\ShellEx\{72DBECE7-D912-4A8F-841C-A521B7447463}', r'HKEY_CLASSES_ROOT\*\shellex\ContextMenuHandlers\PCKeeperShell32', r'CLSID\{00000323-0000-0000-C000-000000000046}'])
+    hkl_local_machine = (key for key in [r'SOFTWARE\Kromtech', r'SOFTWARE\Essentware', r'Software\Kromtech', r'Software\Essentware', r'SOFTWARE\Classes\AppID\{AF85DB83-06F2-4ECF-97CF-C46EDB06BE29}', r'SOFTWARE\Classes\CLSID\{990F7D4F-09EF-47DF-9ABE-BAF2DCCF5C4B}', r'SOFTWARE\Classes\AppID\{E8EB2F1F-661E-4A7F-8F9A-77DEB757A906}', r'SOFTWARE\Classes\CLSID\{6AF595D6-D4A0-4ACA-ADD4-62034EE9FF3A}', r'SOFTWARE\Classes\AppID\{56AD7EEE-D6C0-410E-8A7B-811DEA764554}', r'SOFTWARE\Classes\CLSID\{206E5E13-3B8F-4146-9C21-F18A63A9689B}', r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\PCKeeper Installer.exe', r'SOFTWARE\Classes\CLSID\{CF6E1E3B-5B36-4A71-9105-DC75B4089D8C}', r'SOFTWARE\Classes\CLSID\{0319DE47-F039-45DC-A213-DBB61C6AE509}', r'SOFTWARE\Classes\CLSID\{074BFF31-CA38-43C4-8F25-79213AD708EF}', r'SOFTWARE\Classes\CLSID\{0D838143-D511-4555-8B97-16C3CF5A780D}', r'SOFTWARE\Classes\CLSID\{16A94A89-66C4-4990-896C-5FC3E1557FFD}', r'SOFTWARE\Classes\CLSID\{2B5E8E95-F503-4530-A340-53DE89F3358F}', r'SOFTWARE\Classes\CLSID\{2F8F99FD-7C0E-4150-8DFD-13B1F4FBD916}', r'SOFTWARE\Classes\CLSID\{33B2A2E0-18F6-45CB-8080-04320066A4A1}', r'SOFTWARE\Classes\CLSID\{40B50C00-06BB-415F-8F4E-6DEF53957ABA}', r'SOFTWARE\Classes\CLSID\{503F82AB-1549-4B08-AF10-289CCCF3BE4B}', r'SOFTWARE\Classes\CLSID\{6AF595D6-D4A0-4ACA-ADD4-62034EE9FF3A}', r'SOFTWARE\Classes\CLSID\{6F09F687-2C4C-4A37-8D7A-2CB76D2B3F71}', r'SOFTWARE\Classes\CLSID\{723F0E89-F10C-4D28-A46C-934513EA963A}', r'SOFTWARE\Classes\CLSID\{7944171A-50CC-479E-A6FC-B1E25E665C25}', r'SOFTWARE\Classes\CLSID\{7A2BA8C4-F382-4DD1-A6D2-A86C6D66C4F9}', r'SOFTWARE\Classes\CLSID\{80E9CB05-9C8B-4B85-8A66-D81092F5AF60}', r'SOFTWARE\Classes\CLSID\{817BF5D8-380E-44F4-8E61-43E7ECF74B53}', r'SOFTWARE\Classes\CLSID\{8888A22B-3380-4C2B-950F-A5B6EC527A4B}', r'SOFTWARE\Classes\CLSID\{9443C19D-B318-4EBD-8A7F-6A50D0472FB4}', r'SOFTWARE\Classes\CLSID\{95CAD169-7912-410E-8C8A-7BA1729BD8F7}', r'SOFTWARE\Classes\CLSID\{B462C1CA-E368-4321-B0B1-0453E4AB6FDB}', r'SOFTWARE\Classes\CLSID\{CCF68051-721D-40C7-812D-86ED0FDE7411}', r'SOFTWARE\Classes\CLSID\{D8F2F7F9-F8F3-4562-9FDA-C1E2DAE60A30}', r'SOFTWARE\Classes\CLSID\{DEE0443A-95B1-41DF-B50A-409FDEA53644}', r'SOFTWARE\Classes\CLSID\{F55EA208-E122-4B4E-8483-4404A1CC9569}', r'SOFTWARE\Classes\CLSID\{F6649783-7559-4772-96C7-02D33BEACD8C}', r'SOFTWARE\Classes\CLSID\{05562BE7-0EFC-4BD2-BD8F-FAA363E68410}', r'SOFTWARE\Classes\CLSID\{B52115B1-936F-4EEA-A363-A535FB1942B7}', r'SOFTWARE\Classes\TypeLib\{D062B23B-F8EE-40EC-BF3F-7DB0E9FE1232}', r'SOFTWARE\Classes\TypeLib\{D3F79FC5-65FE-4650-8979-3BF0CCF02C1A}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E44BBEE3-3F83-4670-9E2E-EE0556442287}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E7E7B26A-88AA-48B0-A47C-173C062FD904}', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\f', r'SOFTWARE\Classes\Interface\{CF6E1E3B-5B36-4A71-9105-DC75B4089D8C}', r'SOFTWARE\Classes\Interface\{0319DE47-F039-45DC-A213-DBB61C6AE509}', r'SOFTWARE\Classes\Interface\{074BFF31-CA38-43C4-8F25-79213AD708EF}', r'SOFTWARE\Classes\Interface\{0D838143-D511-4555-8B97-16C3CF5A780D}', r'SOFTWARE\Classes\Interface\{206E5E13-3B8F-4146-9C21-F18A63A9689B}', r'SOFTWARE\Classes\Interface\{2B5E8E95-F503-4530-A340-53DE89F3358F}', r'SOFTWARE\Classes\Interface\{6F09F687-2C4C-4A37-8D7A-2CB76D2B3F71}', r'SOFTWARE\Classes\Interface\{7A2BA8C4-F382-4DD1-A6D2-A86C6D66C4F9}', r'SOFTWARE\Classes\Interface\{8888A22B-3380-4C2B-950F-A5B6EC527A4B}', r'SOFTWARE\Classes\Interface\{D8F2F7F9-F8F3-4562-9FDA-C1E2DAE60A30}', r'SOFTWARE\Classes\Interface\{F6649783-7559-4772-96C7-02D33BEACD8C}', r'SYSTEM\CurrentControlSet\Services\PCKAVService', r'SYSTEM\CurrentControlSet\Services\PCKeeper2Service', r'SYSTEM\CurrentControlSet\Services\PCKeeperOcfService', r'SYSTEM\CurrentControlSet\Services\ZeoScanner', r'SYSTEM\CurrentControlSet\Services\fileHiders', r'SYSTEM\CurrentControlSet\Services\AccountService', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell64', 'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{61CF52DA-5F88-4487-A6EE-24BBC4CDA657}', r'SOFTWARE\Classes\Installer\Features\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Classes\Installer\Products\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\2311DC2B5C57F724B860D95A705A2A6B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\6746C1CA9DF5C304D9AD88BF2F78FE41', r'\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\107367941945A954DA989330ABE49075', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\91D74906933C99B4986DCED8BF2A728B', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\107367941945A954DA989330ABE49075', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\C41354CBF8653FA42AA4FBFAD36CC2A2', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\92D40EBB025BF0941AB82BE495771AAD', r'SOFTWARE\Classes\AppID\{AF85DB83-06F2-4ECF-97CF-C46EDB06BE29}', r'SOFTWARE\Classes\AppID\{88A65C27-A2AA-4F9E-B767-A1C0FA236891}', r'SOFTWARE\Classes\AppID\{56AD7EEE-D6C0-410E-8A7B-811DEA764554}', r'SOFTWARE\Classes\AppID\PCKElevatedHost.exe', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{49763701-5491-459A-AD89-3903BA4E0957}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{60947D19-C339-4B99-89D6-EC8DFBA227B8}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{BBE04D29-B520-490F-A18B-B24E5977A1DA}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{BC45314C-568F-4AF3-A24A-BFAF3DC62C2A}', r'SOFTWARE\Classes\AppID\{0022E012-E49A-44D5-8F7B-CFE27B39CDF8}', r'SOFTWARE\Classes\CLSID\{828FB706-5749-4255-862F-3D30FCF017E1}', r'SOFTWARE\CLASSES\APPID\PCKElevatedHost.exe', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\74CF1A602064EBA4CA7D57DD890F36DC', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\630675D588826C6418C7CC05C5C31E17', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\05830686A5933814BB36EBFCC9C2F489', r'SOFTWARE\Classes\Installer\Products\74CF1A602064EBA4CA7D57DD890F36DC', r'SOFTWARE\Classes\Installer\Products\630675D588826C6418C7CC05C5C31E17', r'SOFTWARE\Classes\Installer\Products\05830686A5933814BB36EBFCC9C2F489', r'SOFTWARE\Classes\Installer\Features\74CF1A602064EBA4CA7D57DD890F36DC', r'SOFTWARE\Classes\Installer\Features\630675D588826C6418C7CC05C5C31E17', r'SOFTWARE\Classes\Installer\Features\05830686A5933814BB36EBFCC9C2F489'])
+    hkl_current_user = (key for key in [r'Software\Essentware', r'SOFTWARE\Kromtech', r'Software\Classes\CLSID\{F55EA208-E122-4B4E-8483-4404A1CC9569}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run\PCKeeperLive', r'Software\Classes\CLSID\{F324E4F9-8496-40B2-A1FF-9617C1C9AFFE}', r'Software\Classes\CLSID\{75847177-f077-4171-bd2c-a6bb2164fbd0}', r'Software\Classes\CLSID\{374DE290-123F-4565-9164-39C4925E467B}', r'Software\Classes\CLSID\{E88DCCE0-B7B3-11d1-A9F0-00AA0060FA31}', r'Software\Classes\CLSID\{A07034FD-6CAA-4954-AC3F-97A27216F98A}', r'Software\Classes\CLSID\{00000323-0000-0000-C000-000000000046}', r'Software\Classes\WOW6432Node\CLSID\{F5078F32-C551-11D3-89B9-0000F81FE221}', r'Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppContainer\Storage\microsoft.microsoftedge_8wekyb3d8bbwe\Children\001\Internet Explorer\DOMStorage\pckeeper.software', r'Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppContainer\Storage\microsoft.microsoftedge_8wekyb3d8bbwe\Children\001\Internet Explorer\DOMStorage\land.pckeeper.software', r'Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppContainer\Storage\microsoft.microsoftedge_8wekyb3d8bbwe\Children\001\Internet Explorer\EdpDomStorage\pckeeper.software', r'Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppContainer\Storage\microsoft.microsoftedge_8wekyb3d8bbwe\Children\001\Internet Explorer\EdpDomStorage\land.pckeeper.software'])
+    hkl_users = (key for key in [r'{0}\Software\Essentware', r'{0}\Software\Kromtech'])
     hklm_value_to_delete = {r'SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved': [r'{05562BE7-0EFC-4BD2-BD8F-FAA363E68410}', r'{B52115B1-936F-4EEA-A363-A535FB1942B7}', r'{828FB706-5749-4255-862F-3D30FCF017E1}', r'{40B50C00-06BB-415F-8F4E-6DEF53957ABA}']}
     hkl_user_value_to_delete = {r'{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run': [r'PCKeeperLive', r'PCKeeper Antivirus', r'PCKeeper Antivirus', r'PCKeeperLive'], r'{0}\Software\Microsoft\Windows\CurrentVersion\Run': [r'PCKeeperLive', r'PCKeeper Antivirus',  r'PCKeeperLive', r'PCKeeper Antivirus']}
     hkl_current_user_value_to_delete = {r'Software\Microsoft\Windows\CurrentVersion\Run': [r'PCKeeper Antivirus', r'PCKeeperLive']}
-    pck_hkl_local_machine = [r'SOFTWARE\Kromtech\{0}', r'SOFTWARE\Essentware\{0}', r'Software\Kromtech\{0}', r'Software\Essentware\{0}']
-    pck_hkl_current_user = [r'Software\Essentware\{0}', r'SOFTWARE\Kromtech\{0}', r'SOFTWARE\Essentware\{0}', r'Software\Kromtech\{0}']
-    pck_hkl_users = [r'{0}\SOFTWARE\Essentware\{1}', r'{0}\SOFTWARE\Kromtech\{1}']
-    pcklive_hkl_local_machine =[r'SOFTWARE\Classes\AppID\{56AD7EEE-D6C0-410E-8A7B-811DEA764554}', r'SOFTWARE\Classes\AppID\{E8EB2F1F-661E-4A7F-8F9A-77DEB757A906}', r'SOFTWARE\Classes\WOW6432Node\CLSID\{05562BE7-0EFC-4BD2-BD8F-FAA363E68410}', r'SOFTWARE\Classes\TypeLib\{D062B23B-F8EE-40EC-BF3F-7DB0E9FE1232}', r'SOFTWARE\Classes\TypeLib\{D3F79FC5-65FE-4650-8979-3BF0CCF02C1A}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E44BBEE3-3F83-4670-9E2E-EE0556442287}', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell64']
+    pck_hkl_local_machine = (key for key in [r'SOFTWARE\Kromtech\{0}', r'SOFTWARE\Essentware\{0}', r'Software\Kromtech\{0}', r'Software\Essentware\{0}'])
+    pck_hkl_current_user = (key for key in [r'Software\Essentware\{0}', r'SOFTWARE\Kromtech\{0}', r'SOFTWARE\Essentware\{0}', r'Software\Kromtech\{0}'])
+    pck_hkl_users = (key for key in [r'{0}\SOFTWARE\Essentware\{1}', r'{0}\SOFTWARE\Kromtech\{1}'])
+    pcklive_hkl_local_machine = (key for key in [r'SOFTWARE\Classes\AppID\{56AD7EEE-D6C0-410E-8A7B-811DEA764554}', r'SOFTWARE\Classes\AppID\{E8EB2F1F-661E-4A7F-8F9A-77DEB757A906}', r'SOFTWARE\Classes\WOW6432Node\CLSID\{05562BE7-0EFC-4BD2-BD8F-FAA363E68410}', r'SOFTWARE\Classes\TypeLib\{D062B23B-F8EE-40EC-BF3F-7DB0E9FE1232}', r'SOFTWARE\Classes\TypeLib\{D3F79FC5-65FE-4650-8979-3BF0CCF02C1A}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E44BBEE3-3F83-4670-9E2E-EE0556442287}', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell32', r'SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\Folder\ShellEx\ContextMenuHandlers\PCKeeperShell64', r'SOFTWARE\Classes\lnkfile\shellex\ContextMenuHandlers\PCKeeperShell64'])
     pcklive_hklm_value_to_delete = {r'SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved':[r'{05562BE7-0EFC-4BD2-BD8F-FAA363E68410}']}
-    pckav_hklm_local_machine = [r'SOFTWARE\Classes\CLSID\{B52115B1-936F-4EEA-A363-A535FB1942B7}', r'SOFTWARE\Classes\TypeLib\{D3F79FC5-65FE-4650-8979-3BF0CCF02C1A}', r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{E7E7B26A-88AA-48B0-A47C-173C062FD904}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E7E7B26A-88AA-48B0-A47C-173C062FD904}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5A4A7D29-7589-427B-86BC-8C313278BF89}']
+    pckav_hklm_local_machine = (key for key in [r'SOFTWARE\Classes\CLSID\{B52115B1-936F-4EEA-A363-A535FB1942B7}', r'SOFTWARE\Classes\TypeLib\{D3F79FC5-65FE-4650-8979-3BF0CCF02C1A}', r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{E7E7B26A-88AA-48B0-A47C-173C062FD904}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{E7E7B26A-88AA-48B0-A47C-173C062FD904}', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5A4A7D29-7589-427B-86BC-8C313278BF89}'])
     pckav_hklm_value_to_delete = {r'SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved':[r'{B52115B1-936F-4EEA-A363-A535FB1942B7}', r'{40B50C00-06BB-415F-8F4E-6DEF53957ABA}']}
     pcklive_current_user = {r'Software\Microsoft\Windows\CurrentVersion\Run':[r'PCKeeperLive']}
     pckav_current_user = {r'Software\Microsoft\Windows\CurrentVersion\Run' :[r'PCKeeper Antivirus']}
@@ -1136,6 +1257,35 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
+                try:
+                    reg_delete_key_64(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles.format(soft)))
+                except FileNotFoundError as e:
+                    print("\n* {0}, following error happend {1}".format(cles.format(soft), str(e)))
+                try:
+                    #THIS LINE IS HERE TO CONFIRM IF IT'S HAS BEEN SUCCESSFULLY DELETED IF NOT IT'S WILL DELETE IT BY COMMAND LINE
+                    sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
+                except sub.CalledProcessError:
+                    pass
+                print("\nDELETING REGISTRY KEYS FOR PCKEEPER\n")
+                soft = r'PCKeeper3'
+                try:
+                    reg_delete_key_32(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles.format(soft)))
+                except FileNotFoundError as e:
+                    print("\n* {0}, following error happend {1}".format(cles.format(soft), str(e)))
+                try:
+                    #THIS LINE IS HERE TO CONFIRM IF IT'S HAS BEEN SUCCESSFULLY DELETED IF NOT IT'S WILL DELETE IT BY COMMAND LINE
+                    sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
+                except sub.CalledProcessError:
+                    pass
+                try:
+                    reg_delete_key_64(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles.format(soft)))
+                except FileNotFoundError as e:
+                    print("\n* {0}, following error happend {1}".format(cles.format(soft), str(e)))
+                try:
+                    #THIS LINE IS HERE TO CONFIRM IF IT'S HAS BEEN SUCCESSFULLY DELETED IF NOT IT'S WILL DELETE IT BY COMMAND LINE
+                    sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
+                except sub.CalledProcessError:
+                    pass
                 continue
             if answer == 2:
                 print("\nDELETING REGISTRY KEYS FOR PCKAV\n")
@@ -1149,25 +1299,6 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-
-        for cles in pck_hkl_local_machine:
-            if answer == 1:
-                print("\nDELETING REGISTRY KEYS FOR PCKEEPER\n")
-                soft = r'PCKeeper'
-                try:
-                    reg_delete_key_64(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles.format(soft)))
-                except FileNotFoundError as e:
-                    print("\n* {0}, following error happend {1}".format(cles.format(soft), str(e)))
-                try:
-                    #THIS LINE IS HERE TO CONFIRM IF IT'S HAS BEEN SUCCESSFULLY DELETED IF NOT IT'S WILL DELETE IT BY COMMAND LINE
-                    sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
-                except sub.CalledProcessError:
-                    pass
-                continue
-            if answer == 2:
-                print("\nDELETING REGISTRY KEYS PCKAV\n")
-                soft = r'PCKAV'
                 try:
                     reg_delete_key_64(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles.format(soft)))
                 except FileNotFoundError as e:
@@ -1192,10 +1323,15 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-            if answer == 2:
-                print("\nDELETING REGISTRY KEYS FOR PCKAV\n")
-                soft = r'PCKAV'
+                try:
+                    reg_delete_key_64(winreg.HKEY_CURRENT_USER, r"{0}".format(cles.format(soft)))
+                except FileNotFoundError as e:
+                    print("\n* {0}, following error happend {1}".format(cles.format(soft), str(e)))
+                try:
+                    sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
+                except sub.CalledProcessError:
+                    pass
+                soft = r'PCKeeper3'
                 try:
                     reg_delete_key_32(winreg.HKEY_CURRENT_USER, r"{0}".format(cles.format(soft)))
                 except FileNotFoundError as e:
@@ -1205,12 +1341,6 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-
-        for cles in pck_hkl_current_user:
-            if answer == 1:
-                print("\nDELETING REGISTRY KEYS FOR PCKEEPER\n")
-                soft = r'PCKeeper'
                 try:
                     reg_delete_key_64(winreg.HKEY_CURRENT_USER, r"{0}".format(cles.format(soft)))
                 except FileNotFoundError as e:
@@ -1223,6 +1353,15 @@ def delete_register():
             if answer == 2:
                 print("\nDELETING REGISTRY KEYS FOR PCKAV\n")
                 soft = r'PCKAV'
+                try:
+                    reg_delete_key_32(winreg.HKEY_CURRENT_USER, r"{0}".format(cles.format(soft)))
+                except FileNotFoundError as e:
+                    print("\n* {0}, following error happend {1}".format(cles.format(soft), str(e)))
+                try:
+                    #THIS LINE IS HERE TO CONFIRM IF IT'S HAS BEEN SUCCESSFULLY DELETED IF NOT IT'S WILL DELETE IT BY COMMAND LINE
+                    sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles.format(soft)), stderr=sub.PIPE, shell=True)
+                except sub.CalledProcessError:
+                    pass
                 try:
                     reg_delete_key_64(winreg.HKEY_CURRENT_USER, r"{0}".format(cles.format(soft)))
                 except FileNotFoundError as e:
@@ -1246,6 +1385,31 @@ def delete_register():
                         sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
+                    try:
+                        reg_delete_key_64(winreg.HKEY_USERS, r"{0}".format(cles.format(sid, soft)))
+                    except FileNotFoundError as e:
+                        print("\n* {0}, following error happend {1}".format(cles.format(sid, soft), str(e)))
+                    try:
+                        sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
+                    except sub.CalledProcessError:
+                        pass
+                    soft = r'PCKeeper3'
+                    try:
+                        reg_delete_key_32(winreg.HKEY_USERS, r"{0}".format(cles.format(sid, soft)))
+                    except FileNotFoundError as e:
+                        print("\n* {0}, following error happend {1}".format(cles.format(sid, soft), str(e)))
+                    try:
+                        sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
+                    except sub.CalledProcessError:
+                        pass
+                    try:
+                        reg_delete_key_64(winreg.HKEY_USERS, r"{0}".format(cles.format(sid, soft)))
+                    except FileNotFoundError as e:
+                        print("\n* {0}, following error happend {1}".format(cles.format(sid, soft), str(e)))
+                    try:
+                        sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
+                    except sub.CalledProcessError:
+                        pass
                     continue
                 if answer == 2:
                     soft = r'PCKAV'
@@ -1258,13 +1422,6 @@ def delete_register():
                         sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
-                    continue
-
-        for sid in hkl_sid_value:    
-            for cles in pck_hkl_users:
-                if answer == 1:
-                    print("\nDELETING REGISTRY KEYS FOR PCKEEPER\n")
-                    soft = r'PCKeeper'
                     try:
                         reg_delete_key_64(winreg.HKEY_USERS, r"{0}".format(cles.format(sid, soft)))
                     except FileNotFoundError as e:
@@ -1273,19 +1430,7 @@ def delete_register():
                         sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
-                    continue
-                if answer == 2:
-                    print("\nDELETING REGISTRY KEYS FOR PCKAV\n")
-                    soft = r'PCKAV'
-                    try:
-                        reg_delete_key_64(winreg.HKEY_USERS, r"{0}".format(cles.format(sid, soft)))
-                    except FileNotFoundError as e:
-                        print("\n* {0}, following error happend {1}".format(cles.format(sid, soft), str(e)))
-                    try:
-                        sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid, soft)), stderr=sub.PIPE, shell=True)
-                    except sub.CalledProcessError:
-                        pass
-                    continue
+                    continue                    
 
         if answer == 1:
             print("\nDELETING REGISTRY KEYS FOR PCKEEPER\n")
@@ -1391,9 +1536,6 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CURRENT_USER\{1}" /v {2} /f'.format(disk, xkey, value), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-        for xkey, xvalue in pcklive_current_user.items():
-            for value in xvalue:
                 try:
                     delete_value_for_64(winreg.HKEY_CURRENT_USER, xkey, value)
                 except FileNotFoundError as e:
@@ -1416,9 +1558,6 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CURRENT_USER\{1}" /v {2} /f'.format(disk, xkey, value), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-        for xkey, xvalue in pckav_current_user.items():
-            for value in xvalue:
                 try:
                     delete_value_for_64(winreg.HKEY_CURRENT_USER, xkey, value)
                 except FileNotFoundError as e:
@@ -1442,11 +1581,6 @@ def delete_register():
                         sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /v {2} /f'.format(disk, xkey.format(sid), value), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
-                    continue
-
-        for sid in hkl_sid_value:
-            for xkey, xvalue in pcklive_user_value_to_delete.items():
-                for value in xvalue:
                     try:
                         delete_value_for_32(winreg.HKEY_USERS, xkey.format(sid), value)
                     except FileNotFoundError as e:
@@ -1455,7 +1589,7 @@ def delete_register():
                         sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_USERS\{1}" /v {2} /f'.format(disk, xkey.format(sid), value), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
-                    continue
+                    continue                    
 
     if answer == 2:
         print("\nDELETING REGISTRY VALUES FOR PCKAV\n")
@@ -1470,11 +1604,6 @@ def delete_register():
                         sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /v {2} /f'.format(disk, xkey.format(sid), value), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
-                    continue
-
-        for sid in hkl_sid_value:
-            for xkey, xvalue in pckav_user_value_to_delete.items():
-                for value in xvalue:
                     try:
                         delete_value_for_32(winreg.HKEY_USERS, xkey.format(sid), value)
                     except FileNotFoundError as e:
@@ -1496,6 +1625,14 @@ def delete_register():
                 sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
             except sub.CalledProcessError:
                 pass
+            try:
+                reg_delete_key_64(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles))
+            except FileNotFoundError as e:
+                print("\n* {0}, following error happend {1}".format(cles, str(e)))
+            try:
+                sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
+            except sub.CalledProcessError:
+                pass
             continue
         
         for cles in hkl_current_user:
@@ -1505,6 +1642,14 @@ def delete_register():
                 print("\n* {0}, following error happend {1}".format(cles, str(e)))
             try:
                 sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
+            except sub.CalledProcessError:
+                pass
+            try:
+                reg_delete_key_64(winreg.HKEY_CURRENT_USER, r"{0}".format(cles))
+            except FileNotFoundError as e:
+                print("\n* {0}, following error happend {1}".format(cles, str(e)))
+            try:
+                sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
             except sub.CalledProcessError:
                 pass
             continue
@@ -1519,43 +1664,6 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_USERS\{1}" /f'.format(disk, cles.format(sid)), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-
-        for cles in hkl_root:
-            try:
-                reg_delete_key_32(winreg.HKEY_CLASSES_ROOT, r"{0}".format(cles))
-            except FileNotFoundError as e:
-                print("\n* {0}, following error happend {1}".format(cles, str(e)))
-            try:
-                sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CLASSES_ROOT\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
-            except sub.CalledProcessError:
-                pass
-            continue
-
-        for cles in hkl_local_machine:
-            try:
-                reg_delete_key_64(winreg.HKEY_LOCAL_MACHINE, r"{0}".format(cles))
-            except FileNotFoundError as e:
-                print("\n* {0}, following error happend {1}".format(cles, str(e)))
-            try:
-                sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
-            except sub.CalledProcessError:
-                pass
-            continue
-        
-        for cles in hkl_current_user:
-            try:
-                reg_delete_key_64(winreg.HKEY_CURRENT_USER, r"{0}".format(cles))
-            except FileNotFoundError as e:
-                print("\n* {0}, following error happend {1}".format(cles, str(e)))
-            try:
-                sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_CURRENT_USER\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
-            except sub.CalledProcessError:
-                pass
-            continue
-
-        for sid in hkl_sid_value:    
-            for cles in hkl_users:
                 try:
                     reg_delete_key_64(winreg.HKEY_USERS, r"{0}".format(cles.format(sid)))
                 except FileNotFoundError as e:
@@ -1567,6 +1675,14 @@ def delete_register():
                 continue
 
         for cles in hkl_root:
+            try:
+                reg_delete_key_32(winreg.HKEY_CLASSES_ROOT, r"{0}".format(cles))
+            except FileNotFoundError as e:
+                print("\n* {0}, following error happend {1}".format(cles, str(e)))
+            try:
+                sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_CLASSES_ROOT\{1}" /f'.format(disk, cles), stderr=sub.PIPE, shell=True)
+            except sub.CalledProcessError:
+                pass
             try:
                 reg_delete_key_64(winreg.HKEY_CLASSES_ROOT, r"{0}".format(cles))
             except FileNotFoundError as e:
@@ -1612,11 +1728,6 @@ def delete_register():
                         sub.call(r'{0}\Windows\Sysnative\reg.exe delete "HKEY_USERS\{1}" /v {2} /f'.format(disk, xkey.format(sid), value), stderr=sub.PIPE, shell=True)
                     except sub.CalledProcessError:
                         pass
-                    continue
-
-        for sid in hkl_sid_value:
-            for xkey, xvalue in hkl_user_value_to_delete.items():
-                for value in xvalue:
                     try:
                         delete_value_for_32(winreg.HKEY_USERS, xkey.format(sid), value)
                     except FileNotFoundError as e:
@@ -1626,6 +1737,7 @@ def delete_register():
                     except sub.CalledProcessError:
                         pass
                     continue
+                    
         
         for xkey, xvalue in hklm_value_to_delete.items():
             for value in xvalue:
@@ -1637,10 +1749,6 @@ def delete_register():
                     sub.call(r'{0}\Windows\System32\reg.exe delete "HKEY_LOCAL_MACHINE\{1}" /v {2} /f'.format(disk, xkey, value), stderr=sub.PIPE, shell=True)
                 except sub.CalledProcessError:
                     pass
-                continue
-
-        for xkey, xvalue in hklm_value_to_delete.items():
-            for value in xvalue:
                 try:
                     delete_value_for_64(winreg.HKEY_LOCAL_MACHINE, xkey, value)
                 except FileNotFoundError as e:
@@ -1651,20 +1759,28 @@ def delete_register():
                     pass
                 continue
 
-
 def delete_scheduled_task():
-    global answer
+    global answer, Program_Files
     """THIS FUNCTION DELETE SCHEDULED TASKS"""
     disk = os.environ['SYSTEMDRIVE']
-    tasks = [r'PCKeeper updater', r'Programme de mise a jour PCKeeper']
-    file_tasks = ['{0}\Windows\System32\Tasks\PCKeeper updater', '{0}\Windows\System32\Tasks\Programme de mise a jour PCKeeper', '{0}\Windows\Tasks\PCKeeper updater', '{0}\Windows\Tasks\Programme de mise a jour PCKeeper']
+    tasks = (update for update in [r'PCKeeper updater', r'Programme de mise a jour PCKeeper'])
+    file_tasks = (update for update in ['{0}\Windows\System32\Tasks\PCKeeper updater', '{0}\Windows\System32\Tasks\Programme de mise a jour PCKeeper', '{0}\Windows\Tasks\PCKeeper updater', '{0}\Windows\Tasks\Programme de mise a jour PCKeeper'])
+
+    def getScheduleFiles(folder):
+        for root, dirs, files in os.walk("{0}".format(folder.format(disk))):
+            for f in files:
+                if "PCKeeper" in f:
+                    yield os.path.join(root, f)
+
+    if answer != 1 and answer != 2:
+        for folder in (pcktask for pcktask in [r'{0}\Windows\System32\Tasks', r'{0}\Windows\Tasks']):
+            for f in getScheduleFiles(folder):
+                sub.call(r'del /f /s /q "{0}"'.format(f), stderr=sub.PIPE, shell=True)
 
     for task in file_tasks:
-        if answer == 1 or answer == 2:
-            continue
-        if answer == 3:
+        if answer == 3 or (answer != 1 and answer != 2):
             try:
-                sub.call('del /f /s /q "{0}"'.format(task.format(disk)), stderr=sub.PIPE, shell=True)
+                sub.call(r'del /f /s /q "{0}"'.format(task.format(disk)), stderr=sub.PIPE, shell=True)
                 if os.path.isfile(task.format(disk)) == False:
                     print("\nSuccesfully deleted {0}".format(task.format(disk)))
                 else:
@@ -1675,8 +1791,6 @@ def delete_scheduled_task():
                 pass
 
     for task in tasks:
-        if answer == 1 or answer == 2:
-            continue
         if answer == 3 or (answer != 1 and answer!= 2):
             try:
                 sub.call('schtasks /delete /F /TN "{0}"'.format(task), stderr=sub.PIPE, shell=True)            
