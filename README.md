@@ -1,2 +1,2 @@
 # PCK-UNINSTALLER
-UNINSTALLER
+UNINSTALLER for pckeeper software
